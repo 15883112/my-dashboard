@@ -24,6 +24,8 @@
   .card.amber .value{color:var(--amber);}
   .card.blue .value{color:var(--blue);}
   .card .rate{font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.4;}
+  .vendor-card{cursor:pointer;}
+  .vendor-card:hover{background:#fafbfc;}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;}
   @media (max-width:820px){.grid2{grid-template-columns:1fr;}}
   .panel{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px;}
@@ -155,11 +157,9 @@
       </div>
     </div>
     <div class="panel">
-      <h2>협력사별 부적합 건수<span class="count-tag">막대 클릭 시 상세 부적합 목록 표시</span></h2>
-      <p class="note">협력사명이 기재된 건만 집계(당사 직영 점검 건 제외)</p>
-      <div class="chart-wrap" style="height:300px;">
-        <canvas id="chartVendor" role="img" aria-label="협력사별 부적합 건수 가로 막대그래프"></canvas>
-      </div>
+      <h2>협력사별 부적합 건수<span class="count-tag">카드 클릭 시 상세 부적합 목록 표시</span></h2>
+      <p class="note">협력사명이 기재된 건만 집계(당사 직영 점검 건 제외). 부적합율 = 부적합 건수 ÷ 협력사별 점검항목건수(방문 로그 합산) × 100</p>
+      <div class="cards" id="cardsVendor" style="max-height:300px;overflow-y:scroll;align-content:start;"></div>
     </div>
   </div>
 
@@ -170,7 +170,7 @@
     </div>
     <div class="panel">
       <h2>그룹명별 부적합 건수</h2>
-      <div class="cards" id="cardsGroup"></div>
+      <div class="cards" id="cardsGroup" style="max-height:300px;overflow-y:scroll;align-content:start;"></div>
     </div>
   </div>
 
@@ -534,11 +534,11 @@ function renderOverview(){
   });
   }catch(e){ console.warn('차트 라이브러리(Chart.js) 로드 실패로 그룹명별 차트를 표시할 수 없습니다.', e); }
 
-  // ---- vendor bar ----
+  // ---- vendor cards (업체별 건수 + 부적합율) ----
   const vendorCounts = {};
   data.forEach(d=>{ if(d.협력사명){ vendorCounts[d.협력사명] = (vendorCounts[d.협력사명]||0)+1; } });
   const vendorTop = Object.entries(vendorCounts).sort((a,b)=>b[1]-a[1]);
-  // 협력사별 점검항목건수 합계(방문 로그 기준, 상단 필터 적용). 한 방문에 협력사가 여럿이면 각 협력사에 모두 더함.
+  // 협력사별 점검항목건수 합계(방문 로그, 상단 필터 적용). 한 방문에 협력사가 여럿이면 각 협력사에 모두 더함.
   const vendorItems = {};
   getOverviewFilteredVisits().forEach(v=>{
     if(!v.협력사명) return;
@@ -546,36 +546,22 @@ function renderOverview(){
       vendorItems[n] = (vendorItems[n]||0) + (v.점검항목건수||0);
     });
   });
-  try{
-  if(chartVendorInst) chartVendorInst.destroy();
-  chartVendorInst = new Chart(document.getElementById('chartVendor'), {
-    type:'bar',
-    data:{ labels: vendorTop.map(x=>x[0]), datasets:[{ label:'건수', data: vendorTop.map(x=>x[1]), backgroundColor:'#5f6b7a' }] },
-    options:{
-      indexAxis:'y', responsive:true, maintainAspectRatio:false,
-      plugins:{
-        legend:{display:false},
-        tooltip:{ callbacks:{
-          label:(ctx)=>{
-            const name = vendorTop[ctx.dataIndex][0];
-            const cnt = ctx.parsed.x;
-            const items = vendorItems[name] || 0;
-            return items>0
-              ? ['부적합 '+cnt+'건', '부적합율 '+(cnt/items*100).toFixed(1)+'% (점검항목 '+items+'건 중)']
-              : ['부적합 '+cnt+'건', '부적합율: 점검항목 데이터 없음'];
-          }
-        } }
-      },
-      scales:{ x:{beginAtZero:true, ticks:{precision:0}} },
-      onHover:(evt, elements)=>{ evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
-      onClick:(evt, elements)=>{
-        if(!elements.length) return;
-        const vendorName = vendorTop[elements[0].index][0];
-        openVendorModal(vendorName);
-      }
-    }
+  const vendorWrap = document.getElementById('cardsVendor');
+  vendorWrap.innerHTML = '';
+  if(!vendorTop.length){
+    vendorWrap.appendChild(el('div','note','해당 조건의 협력사 부적합 기록이 없습니다.'));
+  }
+  vendorTop.forEach(([name,cnt])=>{
+    const items = vendorItems[name]||0;
+    const card = el('div','card vendor-card');
+    card.appendChild(el('div','label',name));
+    card.appendChild(el('div','value',cnt+'건'));
+    card.appendChild(el('div','rate', items>0
+      ? ('부적합율 '+(cnt/items*100).toFixed(1)+'% (점검항목 '+items+'건 중)')
+      : '부적합율: 점검항목 데이터 없음'));
+    card.addEventListener('click', ()=> openVendorModal(name));
+    vendorWrap.appendChild(card);
   });
-  }catch(e){ console.warn('차트 라이브러리(Chart.js) 로드 실패로 협력사별 차트를 표시할 수 없습니다.', e); }
 
   // ---- repeat KPI items ----
   const itemInfo = {};
